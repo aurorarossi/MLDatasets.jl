@@ -1,13 +1,18 @@
 using MLDatasets
+using NPZ
 using GraphNeuralNetworks
 using Flux
 # Load the dataset
 dataset = METRLA()
 gdataset=dataset.graphs[1]
-g= GNNGraph(gdataset.edge_index, edata = gdataset.edge_data, ndata = gdataset.node_data.features[1]) 
+gs=Array{GNNGraph}(undef,12)
+for i in 1:12
+gs[i]= GNNGraph(gdataset.edge_index, edata = gdataset.edge_data, ndata = gdataset.node_data.features[1][i,:,:]) 
+end
 
+gs[1]
 
-f = GNNChain(GCNConv(24 => 24,relu), GCNConv(24 => 24,sigmoid))
+f = GNNChain(GCNConv(2 => 8,relu), GCNConv(8 => 2,sigmoid))
 
 
 struct GCN
@@ -16,13 +21,13 @@ end
 
 Flux.@functor GCN 
 
-function GCN(num_features, nout, hidden_channels;add_self_loops = true)
+function GCN(num_features, nout, hidden_channels;add_self_loops = false)
     layers = (conv1 = GCNConv(num_features => hidden_channels,relu; add_self_loops),
               conv2 = GCNConv(hidden_channels => nout; add_self_loops))
     return GCN(layers)
 end
 
-function (gcn::GCN)(g::GNNGraph, x::AbstractVector)
+function (gcn::GCN)(g::GNNGraph, x)
     l = gcn.layers
     x = l.conv1(g, x)
     x = l.conv2(g, x)
@@ -36,16 +41,16 @@ end
 
 Flux.@functor update 
 
-function update(num_features, nout, hidden_channels;add_self_loops = true)
-    layers = (conv = GCN(num_features, nout, hidden; add_self_loops),
-              dense = Dense(hidden_channels => nout, σ = sigmoid))
+function update(num_features, nout, hidden_channels;add_self_loops = false)
+    layers = (conv = GCN(num_features, nout, hidden_channels; add_self_loops),
+              dense = Dense(2 * nout => nout,sigmoid))
     return update(layers)
 end
 
 function (update::update)(g::GNNGraph, x::AbstractMatrix, h::AbstractMatrix)
     l = update.layers
-    x = l.conv(g, [x; h])
-    x = l.dense(g, x)
+    x = l.conv(g, x)
+    x = l.dense([x; h])
     return x
 end
 
@@ -55,7 +60,7 @@ end
 
 Flux.@functor reset 
 
-function reset(num_features, nout, hidden_channels;add_self_loops = true)
+function reset(num_features, nout, hidden_channels;add_self_loops = false)
     layers = (conv = GCN(num_features, nout, hidden; add_self_loops),
               dense = Dense(hidden_channels => nout, σ = sigmoid))
     return reset(layers)
@@ -74,7 +79,7 @@ end
 
 Flux.@functor candidate 
 
-function candidate(num_features, nout, hidden_channels;add_self_loops = true)
+function candidate(num_features, nout, hidden_channels;add_self_loops = false)
     layers = (conv = GCN(num_features, nout, hidden; add_self_loops),
               dense = Dense(hidden_channels => nout, σ = tanh))
     return candidate(layers)
